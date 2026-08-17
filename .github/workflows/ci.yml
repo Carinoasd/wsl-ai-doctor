@@ -171,6 +171,46 @@ jobs:
           test "$rc" -eq 64 || { echo "期望離開碼 64,實際 $rc"; exit 1; }
           echo "OK"
 
+      # README 主推的一行執行方式(curl ... | bash)。管線執行時腳本不存在於
+      # 檔案系統上,$0 只會是 "bash",提示中的自我指涉必須改用下載指令才可用。
+      - name: Piped execution (curl | bash equivalent)
+        run: |
+          set +e
+          out=$(cat wsl-ai-doctor.sh | bash -s -- --allow-non-wsl --no-color --skip-network 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          test "$rc" -eq 0 -o "$rc" -eq 1 || { echo "管線執行失敗,離開碼 $rc"; exit 1; }
+          echo "$out" | grep -q "健檢總結" || { echo "管線執行未印出總結"; exit 1; }
+          cat wsl-ai-doctor.sh | bash -s -- --version | grep -q "wsl-ai-doctor v" \
+            || { echo "管線執行 --version 失敗"; exit 1; }
+          echo "OK"
+
+      - name: Piped execution suggests a usable command, not bare bash
+        run: |
+          set +e
+          out=$(cat wsl-ai-doctor.sh | bash -s -- --no-color 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          test "$rc" -eq 3 || { echo "期望離開碼 3,實際 $rc"; exit 1; }
+          echo "$out" | grep -q "curl -fsSL" \
+            || { echo "非 WSL 提示未改用可執行的下載指令"; exit 1; }
+          if echo "$out" | grep -qE '\$ bash --allow-non-wsl'; then
+            echo "提示中出現無法執行的裸 bash 指令"; exit 1
+          fi
+          echo "OK"
+
+      # AI 修復建議只准出現在文字模式;JSON 一旦被污染,下游解析就會失敗
+      - name: AI hint never pollutes JSON output
+        run: |
+          ./wsl-ai-doctor.sh --allow-non-wsl --json > ai.json 2>/dev/null || true
+          python3 -m json.tool ai.json > /dev/null || { echo "JSON 無法解析"; exit 1; }
+          if grep -qF '🤖' ai.json || grep -qF 'claude "' ai.json; then
+            echo "JSON 中混入了 AI 修復建議"; exit 1
+          fi
+          echo "OK"
+
       # --help 應反映語言,且與參數順序無關
       - name: --help respects --lang regardless of order
         run: |

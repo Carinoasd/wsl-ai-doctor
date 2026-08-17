@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.0] — 尚未發布 / Unreleased
+
+### Added
+
+- **AI 修復建議。** 當結果有 WARN 或 FAIL、且本機裝有 `claude` 時,總結後面會多出一行可直接複製的指令,把診斷交給 AI agent 逐項處理。指令刻意讓 AI 讀 `--json` 而非文字輸出,因為 JSON 帶有穩定的檢查 `id`,不需要解析人類可讀的排版;並要求 AI 在修改設定檔前先說明檔案與行號、取得使用者確認。此區塊只在文字模式輸出:`--json` 必須保持純淨,全部通過時也不顯示。
+  *An AI fix suggestion after the summary when there is anything to fix and `claude` is installed. It points the agent at `--json` and requires confirmation before editing any config file. Text mode only.*
+- **一行執行方式。** README 主推 `curl ... | bash`,原本的下載後執行保留為可先檢視內容的備選。
+  *A one-liner install path in the README, with the download-first method kept as the reviewable alternative.*
+
+### Fixed
+
+- **管線執行時的自我指涉指令無法使用。** 以 `curl ... | bash` 執行時腳本不存在於檔案系統上,`$0` 只會是 `bash`,非 WSL 提示因此印出 `bash --allow-non-wsl` 這種不存在的指令。現在改為偵測執行方式:有實體檔案就用絕對路徑,管線執行則回傳完整的下載指令。
+  *Self-referencing commands printed `bash --allow-non-wsl` when the script was piped into bash. They now fall back to the full download command.*
+
+---
+
 ## [0.2.1] - 2026-08-17
 
 ### Fixed

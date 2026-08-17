@@ -41,13 +41,32 @@ Results come in three levels:
 
 ## Installation
 
-### Download and run
+### One-liner (fastest)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Carinoasd/wsl-ai-doctor/main/wsl-ai-doctor.sh | bash
+```
+
+Leaves nothing behind — ideal when you just want to see the result once. Pass options through
+`bash -s --`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Carinoasd/wsl-ai-doctor/main/wsl-ai-doctor.sh | bash -s -- --lang en
+```
+
+> This script **only reads** — it never modifies your configuration — so running it this way
+> carries less risk than a typical installer. Piping anything from the network into `bash` still
+> means trusting the source, though; use the method below if you would rather read it first.
+
+### Download, then run (lets you inspect it first)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Carinoasd/wsl-ai-doctor/main/wsl-ai-doctor.sh -o wsl-ai-doctor.sh
 chmod +x wsl-ai-doctor.sh
 ./wsl-ai-doctor.sh
 ```
+
+Keeping the file around also lets you re-run it later and compare before and after a fix.
 
 ### Or clone the repository
 
@@ -82,7 +101,7 @@ Diagnostics default to Traditional Chinese; pass `--lang en` for English:
 Sample output, from a machine where Node.js was only installed on the Windows side:
 
 ```
-wsl-ai-doctor v0.2.1 — WSL AI coding agent environment health check
+wsl-ai-doctor v0.3.0 — WSL AI coding agent environment health check
 Checked at: 2026-08-17 12:48:55
 
 ▸ WSL version and configuration
@@ -153,7 +172,7 @@ should key on:
 ```json
 {
   "tool": "wsl-ai-doctor",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "generated_at": "2026-08-17T12:47:35+0800",
   "lang": "en",
   "environment": {
@@ -188,6 +207,29 @@ Pull out everything that needs attention with `jq`:
 ```bash
 ./wsl-ai-doctor.sh --json | jq -r '.checks[] | select(.status=="fail") | .id'
 ```
+
+### Hand the diagnosis to an AI agent
+
+When the run produces any WARN or FAIL and `claude` is installed locally, the summary is
+followed by a copy-pasteable command:
+
+```
+🤖 Let an AI agent fix this
+   claude is installed on this machine, so you can hand the diagnosis straight to it:
+   $ claude "Run /path/to/wsl-ai-doctor.sh --json to get the environment diagnosis for this
+     WSL machine. For every check whose status is fail or warn, explain the cause and help me
+     fix it. Before touching any of my configuration files, tell me which file and which line
+     you intend to change and wait for my confirmation."
+```
+
+It points the agent at `--json` rather than the text output, because the JSON carries stable
+check `id`s and the agent never has to parse human-facing formatting. The prompt also requires
+the agent to **name the file and line and wait for your confirmation** before editing anything,
+so it cannot quietly rewrite your environment.
+
+This block appears in text mode only — `--json` output has to stay clean or downstream parsers
+break — and never when everything passes, since there is nothing to fix. With `--lang en` the
+suggested prompt is in English.
 
 ### Language
 

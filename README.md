@@ -39,13 +39,29 @@ Node.js,結果路徑一路對不上。這些問題的錯誤訊息通常都指不
 
 ## 安裝 / Installation
 
-### 直接下載執行
+### 一行執行(最快)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Carinoasd/wsl-ai-doctor/main/wsl-ai-doctor.sh | bash
+```
+
+不留下任何檔案,適合只想快速看一次結果的情況。要加選項時用 `bash -s --` 傳遞:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Carinoasd/wsl-ai-doctor/main/wsl-ai-doctor.sh | bash -s -- --lang en
+```
+
+> 這支腳本**只讀取不修改**任何設定,所以直接執行的風險比一般安裝腳本低。不過把網路上的腳本接進 `bash` 執行終究是需要信任來源的動作;想先看過內容再跑,用下面的方式。
+
+### 下載後執行(可先檢視內容)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Carinoasd/wsl-ai-doctor/main/wsl-ai-doctor.sh -o wsl-ai-doctor.sh
 chmod +x wsl-ai-doctor.sh
 ./wsl-ai-doctor.sh
 ```
+
+留下檔案的好處是之後可以重複執行、比對修復前後的差異。
 
 ### 或 clone 整個專案
 
@@ -74,7 +90,7 @@ cd wsl-ai-doctor
 輸出範例:
 
 ```
-wsl-ai-doctor v0.2.1 — WSL AI coding agent 環境健檢
+wsl-ai-doctor v0.3.0 — WSL AI coding agent 環境健檢
 檢查時間:2026-08-17 04:36:06
 
 ▸ WSL 版本與設定
@@ -141,7 +157,7 @@ wsl-ai-doctor v0.2.1 — WSL AI coding agent 環境健檢
 ```json
 {
   "tool": "wsl-ai-doctor",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "generated_at": "2026-08-17T12:47:35+0800",
   "lang": "zh-TW",
   "environment": {
@@ -176,6 +192,22 @@ wsl-ai-doctor v0.2.1 — WSL AI coding agent 環境健檢
 ```bash
 ./wsl-ai-doctor.sh --json | jq -r '.checks[] | select(.status=="fail") | .id'
 ```
+
+### 交給 AI 逐項修復
+
+當結果有 WARN 或 FAIL、且本機裝有 `claude` 時,總結後面會多出一段可直接複製的指令:
+
+```
+🤖 AI 修復建議
+   偵測到本機已安裝 claude,可以把診斷結果直接交給 AI 逐項處理:
+   $ claude "請執行 /path/to/wsl-ai-doctor.sh --json 取得這台 WSL 的環境診斷,針對 status
+     為 fail 與 warn 的每一項,說明問題成因並協助我修復;動到我的設定檔之前,先告訴我要改
+     哪個檔案的哪一行,經我確認後再修改。"
+```
+
+它讓 AI 讀 `--json` 而不是文字輸出,因為 JSON 帶有穩定的檢查 `id`,AI 不必去解析人類可讀的排版。指令內容也要求 AI **修改設定檔前先說明並取得你的確認**,不會自作主張動你的環境。
+
+這段只在文字模式出現。`--json` 的輸出必須保持純淨,否則下游解析會失敗;全部通過時也不會出現,沒有東西要修就不該多這一段。`--lang en` 時會輸出英文版本的指令。
 
 ### 語言切換
 

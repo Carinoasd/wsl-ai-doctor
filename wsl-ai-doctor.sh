@@ -23,7 +23,7 @@
 
 set -uo pipefail
 
-VERSION="0.2.1"
+VERSION="0.3.0"
 
 # 依賴 associative array(declare -A),需要 bash 4.0 以上
 if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
@@ -55,6 +55,11 @@ PATH_WIN_ENTRY_WARN="${WSL_AI_DOCTOR_PATH_WIN_WARN:-25}"
 
 # nvm 安裝指令(多處引用,集中一處便於更新版本)
 NVM_INSTALL_CMD="curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash"
+
+# 本工具自身的下載位址。以管線方式執行(curl ... | bash)時,腳本並不存在於
+# 檔案系統上,提示中的「請再執行一次」就得改用這個網址,否則會印出
+# `bash --allow-non-wsl` 這種根本不存在的指令。
+SELF_RAW_URL="https://raw.githubusercontent.com/Carinoasd/wsl-ai-doctor/main/wsl-ai-doctor.sh"
 
 # ---------------------------------------------------------------------------
 # 執行期狀態
@@ -286,6 +291,10 @@ declare -A MSG_ZH=(
   [sum.ok]='環境狀態:健康'
   [sum.ok.detail]=' — 所有檢查項目都通過。'
 
+  [ai.title]='🤖 AI 修復建議'
+  [ai.desc]='偵測到本機已安裝 claude,可以把診斷結果直接交給 AI 逐項處理:'
+  [ai.prompt]='請執行 %s --json 取得這台 WSL 的環境診斷,針對 status 為 fail 與 warn 的每一項,說明問題成因並協助我修復;動到我的設定檔之前,先告訴我要改哪個檔案的哪一行,經我確認後再修改。'
+
   [err.unknown_option]='ERROR: 未知的選項 %s'
   [err.unknown_lang]='ERROR: 不支援的語言 %s(可用:zh-TW、en)'
   [err.lang_missing]='ERROR: --lang 需要指定語言(zh-TW 或 en)'
@@ -482,6 +491,10 @@ declare -A MSG_EN=(
   [sum.ok]='Status: healthy'
   [sum.ok.detail]=' — every check passed.'
 
+  [ai.title]='🤖 Let an AI agent fix this'
+  [ai.desc]='claude is installed on this machine, so you can hand the diagnosis straight to it:'
+  [ai.prompt]='Run %s --json to get the environment diagnosis for this WSL machine. For every check whose status is fail or warn, explain the cause and help me fix it. Before touching any of my configuration files, tell me which file and which line you intend to change and wait for my confirmation.'
+
   [err.unknown_option]='ERROR: unknown option %s'
   [err.unknown_lang]='ERROR: unsupported language %s (available: zh-TW, en)'
   [err.lang_missing]='ERROR: --lang requires a language (zh-TW or en)'
@@ -620,6 +633,27 @@ win_query() {
   # 從 /mnt/c 執行,避免 cmd.exe 對 UNC 工作目錄發出警告
   out="$(cd /mnt/c 2>/dev/null && timeout 10 "$@" 2>/dev/null | tr -d '\r\n')" || return 1
   printf '%s' "$out"
+}
+
+# 取得「再執行一次本工具」的指令字串。
+#
+# 一般情況回傳腳本自身的路徑;若腳本是以管線方式執行(curl ... | bash),
+# 檔案並不存在於磁碟上,$0 只會是 "bash",此時改回傳完整的下載指令,
+# 讓提示中的指令實際可用。
+self_invocation() {
+  local self="${BASH_SOURCE[0]:-$0}"
+  local dir
+
+  if [[ -f "$self" ]]; then
+    dir="$(cd "$(dirname "$self")" 2>/dev/null && pwd)"
+    if [[ -n "$dir" ]]; then
+      printf '%s/%s' "$dir" "$(basename "$self")"
+    else
+      printf '%s' "$self"
+    fi
+  else
+    printf 'curl -fsSL %s | bash -s --' "$SELF_RAW_URL"
+  fi
 }
 
 # 收集環境基本資訊(JSON 輸出用,也供檢查引用)
@@ -1368,6 +1402,25 @@ render_summary() {
   printf '%s%s%s\n' "$C_BOLD" "$bar" "$C_RESET"
 }
 
+# 有 WARN/FAIL 且本機裝有 claude 時,提供一行可直接複製的指令,
+# 把 --json 診斷結果交給 AI agent 逐項修復。
+#
+# 只在文字模式輸出:--json 的結果必須保持純淨,任何額外內容都會讓
+# 下游的解析器失敗。全部通過時也不印,沒有東西要修就不該多這一段。
+render_ai_hint() {
+  [[ "$OUTPUT_FORMAT" == "json" ]] && return 0
+  [[ $((WARN_COUNT + FAIL_COUNT)) -eq 0 ]] && return 0
+  command -v claude >/dev/null 2>&1 || return 0
+
+  local invocation prompt
+  invocation="$(self_invocation)"
+  prompt="$(t ai.prompt "$invocation")"
+
+  printf '\n%s%s%s%s\n' "$C_BOLD" "$C_CYAN" "$(t ai.title)" "$C_RESET"
+  printf '   %s%s%s\n' "$C_DIM" "$(t ai.desc)" "$C_RESET"
+  printf '   %s$ claude "%s"%s\n' "$C_CYAN" "$prompt" "$C_RESET"
+}
+
 # ---------------------------------------------------------------------------
 # 輸出層:JSON
 # ---------------------------------------------------------------------------
@@ -1558,7 +1611,7 @@ print_non_wsl_notice() {
   printf '         %s↳ %s\n' "$C_DIM" "$(t gate.h1)"
   printf '           %s%s\n' "$(t gate.h2)" "$C_RESET"
   printf '         %s↳ %s%s\n' "$C_DIM" "$(t gate.h3)" "$C_RESET"
-  printf '           %s$ %s --allow-non-wsl%s\n' "$C_CYAN" "$0" "$C_RESET"
+  printf '           %s$ %s --allow-non-wsl%s\n' "$C_CYAN" "$(self_invocation)" "$C_RESET"
   printf '             %s%s%s\n\n' "$C_DIM" "$(t gate.h4)" "$C_RESET"
 }
 
@@ -1660,6 +1713,7 @@ main() {
   else
     render_text
     render_summary
+    render_ai_hint
   fi
 
   exit "$exit_code"
