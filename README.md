@@ -6,6 +6,7 @@
 >
 > A health-check tool for WSL environments running AI coding agent CLIs.
 
+[![CI](https://github.com/Carinoasd/wsl-ai-doctor/actions/workflows/ci.yml/badge.svg)](https://github.com/Carinoasd/wsl-ai-doctor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Shell: Bash](https://img.shields.io/badge/Shell-Bash-4EAA25.svg)](wsl-ai-doctor.sh)
 
@@ -73,7 +74,7 @@ cd wsl-ai-doctor
 輸出範例:
 
 ```
-wsl-ai-doctor v0.1.0 — WSL AI coding agent 環境健檢
+wsl-ai-doctor v0.2.0 — WSL AI coding agent 環境健檢
 檢查時間:2026-08-17 04:36:06
 
 ▸ WSL 版本與設定
@@ -118,13 +119,79 @@ wsl-ai-doctor v0.1.0 — WSL AI coding agent 環境健檢
 | `-v, --version` | 顯示版本 |
 | `--no-color` | 停用彩色輸出 |
 | `--color` | 強制彩色輸出(即使不是終端機) |
+| `--json` | 輸出機器可讀的 JSON(自動停用顏色) |
+| `--lang <代碼>` | 診斷訊息語言:`zh-TW`(預設)或 `en` |
 | `--skip-network` | 略過對外連線檢查(離線環境使用) |
+| `--allow-non-wsl` | 非 WSL 環境也執行,WSL 相關檢查標記為 SKIP(CI 用) |
 
 輸出到檔案或管線時會自動停用顏色,也支援 [`NO_COLOR`](https://no-color.org/) 慣例:
 
 ```bash
 ./wsl-ai-doctor.sh > health-report.txt
 ```
+
+### JSON 輸出
+
+`--json` 讓結果可以被其他工具消費。每筆檢查都有**穩定的 `id`**,是串接時可靠的錨點——訊息文字會隨版本或語言改變,`id` 不會:
+
+```bash
+./wsl-ai-doctor.sh --json
+```
+
+```json
+{
+  "tool": "wsl-ai-doctor",
+  "version": "0.2.0",
+  "generated_at": "2026-08-17T12:47:35+0800",
+  "lang": "zh-TW",
+  "environment": {
+    "is_wsl": true,
+    "wsl_version": 2,
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "distro": "Ubuntu",
+    "systemd": true
+  },
+  "summary": {
+    "pass": 12, "warn": 2, "fail": 0, "skip": 0,
+    "total": 14, "health": "usable"
+  },
+  "exit_code": 1,
+  "checks": [
+    {
+      "id": "npm.prefix_location",
+      "section": "npm",
+      "status": "fail",
+      "message": "npm 全域安裝路徑位於 Windows 端:C:\\Users\\you\\AppData\\Roaming\\npm",
+      "hints": ["這正是「明明 npm install -g 裝好了,指令卻找不到」最常見的原因:"],
+      "commands": ["curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash"]
+    }
+  ]
+}
+```
+
+`summary.health` 有四種值:`healthy`、`usable`、`needs_fix`、`not_applicable`(非 WSL 環境)。
+
+搭配 `jq` 取出所有需要處理的項目:
+
+```bash
+./wsl-ai-doctor.sh --json | jq -r '.checks[] | select(.status=="fail") | .id'
+```
+
+### 語言切換
+
+診斷訊息預設為繁體中文,可切換為英文:
+
+```bash
+./wsl-ai-doctor.sh --lang en
+```
+
+也可用環境變數設為預設,寫進 `~/.bashrc` 即可:
+
+```bash
+export WSL_AI_DOCTOR_LANG=en
+```
+
+`--lang` 同時影響檢查訊息、章節標題、總結與 `--help`。修復指令本身不翻譯,因為 shell 指令沒有語言之分。
 
 ### 離開代碼 / Exit codes
 
@@ -133,7 +200,10 @@ wsl-ai-doctor v0.1.0 — WSL AI coding agent 環境健檢
 | `0` | 全部通過 |
 | `1` | 有 WARN,無 FAIL |
 | `2` | 有 FAIL |
+| `3` | 不在 WSL 環境中,未執行任何檢查 |
 | `64` | 選項用法錯誤 |
+
+在非 WSL 環境(原生 Linux、容器、CI runner)執行時,本工具**預設拒絕執行並回報 `3`**。因為所有檢查的前提都是 WSL,硬跑只會產生誤導性建議(例如叫你去修改一台根本沒有 `/etc/wsl.conf` 的機器)。若確實需要在這類環境執行,加上 `--allow-non-wsl`,WSL 專屬的檢查會標記為 `SKIP`。
 
 適合放進 devcontainer 或環境初始化腳本裡當作前置檢查:
 
@@ -147,6 +217,7 @@ wsl-ai-doctor v0.1.0 — WSL AI coding agent 環境健檢
 
 | 變數 | 預設值 | 說明 |
 | --- | --- | --- |
+| `WSL_AI_DOCTOR_LANG` | `zh-TW` | 預設語言(`zh-TW` 或 `en`) |
 | `WSL_AI_DOCTOR_NODE_MIN` | `18` | Node.js 最低版本,低於此值判為 FAIL |
 | `WSL_AI_DOCTOR_NODE_RECOMMENDED` | `20` | Node.js 建議版本,低於此值判為 WARN |
 | `WSL_AI_DOCTOR_NET_TIMEOUT` | `8` | 網路檢查逾時秒數 |
@@ -176,13 +247,20 @@ WSL 是一個「兩個作業系統共用一份 PATH」的環境,大部分疑難�
 
 ## Roadmap
 
-V1 專注在把檢查邏輯做穩。規劃中的後續功能:
+已完成:
+
+- [x] `--json` 輸出,方便串接其他工具(v0.2.0)
+- [x] 英文輸出(`--lang en`)(v0.2.0)
+- [x] 非 WSL 環境防護與 CI(v0.2.0)
+
+規劃中:
 
 - [ ] `--fix` 自動修復模式
 - [ ] 互動式選單,逐項確認要修的問題
-- [ ] `--json` 輸出,方便串接其他工具
-- [ ] 英文輸出(`--lang en`)
 - [ ] 更多檢查:git 設定、SSH agent、Docker Desktop 整合、專案是否放在 `/mnt/c`(跨檔案系統的效能陷阱)
+- [ ] 更多語言(訊息目錄已備妥,新增語言只需補一份對照表)
+
+完整的版本紀錄見 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -194,8 +272,12 @@ V1 專注在把檢查邏輯做穩。規劃中的後續功能:
 
 ```bash
 bash -n wsl-ai-doctor.sh          # 語法檢查
-shellcheck -S warning wsl-ai-doctor.sh   # 靜態檢查(選用)
+shellcheck -S warning wsl-ai-doctor.sh   # 靜態檢查
 ```
+
+CI 會在每次 push 與 PR 跑上述兩項加上冒煙測試。由於 GitHub runner 不是 WSL,冒煙測試透過 `--allow-non-wsl` 讓檢查真的執行,而不是只用 `--help` 應付。
+
+新增訊息時必須**同時**加進腳本裡的 `MSG_ZH` 與 `MSG_EN`。英文輸出若殘留未翻譯的文字或 `<missing:...>` 鍵,CI 會直接失敗。
 
 ---
 

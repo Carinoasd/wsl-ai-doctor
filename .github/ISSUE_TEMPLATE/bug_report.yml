@@ -1,0 +1,96 @@
+name: 🐛 Bug 回報 / Bug report
+description: 檢查結果不正確、腳本執行出錯,或修復建議沒有用 / A wrong result, a crash, or a fix that does not work
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感謝回報!**最重要的是下面那個「完整輸出」欄位** —— 有它才有辦法判斷是哪一項檢查、在什麼環境下出錯。
+
+        Thanks for reporting. **The full output field below matters most** — without it there is
+        no way to tell which check misbehaved, or in what environment.
+
+  - type: textarea
+    id: full-output
+    attributes:
+      label: 腳本完整輸出 / Full script output
+      description: |
+        請執行下列指令並**完整貼上**輸出(不要只貼出錯的那一行,前後文同樣重要)。
+        Run the command below and paste the **entire** output — surrounding context matters as much as the failing line.
+
+        ```bash
+        ./wsl-ai-doctor.sh --no-color
+        ```
+
+        如果問題與網路無關,可加 `--skip-network` 讓輸出短一些。
+        輸出中若含有你不想公開的路徑或使用者名稱,可自行遮蔽,但請保留其餘結構。
+
+        Add `--skip-network` for shorter output if the issue is unrelated to connectivity.
+        Feel free to redact private paths or usernames, but keep the surrounding structure intact.
+      render: text
+      placeholder: |
+        wsl-ai-doctor v0.2.0 — WSL AI coding agent 環境健檢
+        檢查時間:2026-08-17 12:00:00
+
+        ▸ WSL 版本與設定
+          [PASS] WSL2(kernel 6.6.87.2-microsoft-standard-WSL2)
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: json-output
+    attributes:
+      label: JSON 輸出(選填,但很有幫助)/ JSON output (optional, but helpful)
+      description: |
+        `--json` 會帶出檢查 ID 與環境資訊,比文字輸出更精確。
+        `--json` includes check IDs and environment details, which is more precise than the text output.
+
+        ```bash
+        ./wsl-ai-doctor.sh --json
+        ```
+      render: json
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / Version
+      description: "`./wsl-ai-doctor.sh --version` 的輸出 / Output of `./wsl-ai-doctor.sh --version`"
+      placeholder: "wsl-ai-doctor v0.2.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你預期會看到什麼?/ What did you expect?
+      description: |
+        例如:「這項應該是 PASS,因為我的 node 確實裝在 WSL 裡」、「照建議指令做了但問題沒解決」。
+        For example: "this should be PASS because my node really is inside WSL", or "I ran the suggested command and it did not help".
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 環境補充 / Additional environment details
+      description: |
+        任何你覺得可能相關的資訊:Windows 版本、發行版、是否使用 VPN 或公司網路、node 的安裝方式(nvm / apt / fnm)等。
+        Anything you think may be relevant: Windows version, distribution, VPN or corporate network, how node was installed (nvm / apt / fnm).
+      placeholder: |
+        Windows 11 23H2 / Ubuntu 24.04 / node 透過 nvm 安裝 / 公司 VPN 連線中
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 確認事項 / Checklist
+      options:
+        - label: 我使用的是最新版本 / I am on the latest version
+          required: false
+        - label: 我已貼上完整輸出,而非只有片段 / I pasted the full output, not just a fragment
+          required: true

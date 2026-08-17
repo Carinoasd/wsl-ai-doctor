@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 使用問題與討論 / Questions and discussion
+    url: https://github.com/Carinoasd/wsl-ai-doctor/discussions
+    about: 不確定是不是 bug、想問怎麼用,或想討論方向,請走這裡 / For usage questions and open-ended discussion

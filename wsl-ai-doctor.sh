@@ -692,12 +692,14 @@ check_node() {
   node_path="$(command -v node 2>/dev/null)"
 
   if [[ -z "$node_path" ]]; then
+    # 提醒放在引導語之前:render 會先印完所有 hint 才印指令,
+    # 以冒號結尾的引導語必須是最後一句,才能緊接著指令。
     record fail node.version "$(t node.missing)" \
+      --hint "$(t node.missing.h2)" \
       --hint "$(t node.missing.h1)" \
       --cmd  "$NVM_INSTALL_CMD" \
       --cmd  'exec $SHELL -l' \
-      --cmd  "nvm install --lts" \
-      --hint "$(t node.missing.h2)"
+      --cmd  "nvm install --lts"
     return 1
   fi
 

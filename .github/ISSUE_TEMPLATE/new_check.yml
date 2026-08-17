@@ -1,0 +1,75 @@
+name: 🔍 新增檢查項目 / Propose a new check
+description: 你遇過的 WSL 環境地雷,值得被自動抓出來 / A WSL environment trap worth detecting automatically
+title: "[Check] "
+labels: ["enhancement", "new-check"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        這個工具最該涵蓋的,是那種**錯誤訊息完全誤導人**的問題 —— 症狀看起來像 A,實際原因是 B。
+        如果你踩過這種坑,這裡正是它該待的地方。
+
+        The traps worth covering are the ones where **the error message actively misleads you** —
+        it looks like problem A, but the cause is B. If you have hit one, this is where it belongs.
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 症狀 / Symptom
+      description: |
+        使用者實際會看到什麼?錯誤訊息、卡住的地方、看起來不合理的行為。
+        What does the user actually see — the error message, where it hangs, the behaviour that makes no sense.
+      placeholder: |
+        執行 claude 時顯示 command not found,但 npm ls -g 明明列出它已安裝。
+    validations:
+      required: true
+
+  - type: textarea
+    id: root-cause
+    attributes:
+      label: 真正的原因 / Actual root cause
+      description: |
+        為什麼會這樣?這一段是這個檢查存在的價值所在。
+        Why does it happen? This part is what makes the check worth adding.
+      placeholder: |
+        npm 的全域前綴指向 Windows 的 %APPDATA%\npm,產生的是 .cmd 包裝檔,bash 執行不了。
+    validations:
+      required: true
+
+  - type: textarea
+    id: detection
+    attributes:
+      label: 怎麼偵測 / How to detect it
+      description: |
+        可以用什麼指令或檔案判斷?若已有可行的判斷方式,請一併附上。
+        Which command or file reveals it? Include a working detection snippet if you have one.
+      render: bash
+      placeholder: |
+        npm config get prefix | grep -qE '^[A-Za-z]:\\'
+    validations:
+      required: false
+
+  - type: textarea
+    id: fix
+    attributes:
+      label: 修復方式 / How to fix it
+      description: |
+        可直接複製貼上的指令。本工具的原則是「不只說有問題,還要說怎麼修」。
+        Copy-pasteable commands. The rule here is never to report a problem without a fix.
+      render: bash
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 建議分級 / Suggested severity
+      description: |
+        FAIL = 會直接讓 AI CLI 無法運作;WARN = 影響效能或穩定性但還能用。
+        FAIL = actively prevents AI CLIs from working; WARN = affects performance or stability only.
+      options:
+        - FAIL — 工具無法運作 / breaks the tool
+        - WARN — 影響效能或穩定性 / degrades performance or stability
+        - 不確定 / Not sure
+    validations:
+      required: true

@@ -4,6 +4,7 @@
 
 > A health-check tool for WSL environments running AI coding agent CLIs.
 
+[![CI](https://github.com/Carinoasd/wsl-ai-doctor/actions/workflows/ci.yml/badge.svg)](https://github.com/Carinoasd/wsl-ai-doctor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Shell: Bash](https://img.shields.io/badge/Shell-Bash-4EAA25.svg)](wsl-ai-doctor.sh)
 
@@ -72,50 +73,52 @@ No root required. The script **only reads** — it never modifies your configura
 ./wsl-ai-doctor.sh
 ```
 
-Sample output (from a real machine before it was fixed):
+Diagnostics default to Traditional Chinese; pass `--lang en` for English:
+
+```bash
+./wsl-ai-doctor.sh --lang en
+```
+
+Sample output, from a machine where Node.js was only installed on the Windows side:
 
 ```
-wsl-ai-doctor v0.1.0 — WSL AI coding agent 環境健檢
-檢查時間:2026-08-17 04:36:06
+wsl-ai-doctor v0.2.0 — WSL AI coding agent environment health check
+Checked at: 2026-08-17 12:48:55
 
-▸ WSL 版本與設定
-  [PASS] WSL2(kernel 6.18.33.2-microsoft-standard-WSL2)
-  [INFO] 發行版:Ubuntu
-  [PASS] systemd 已啟用(PID 1 = systemd)
+▸ WSL version and configuration
+  [PASS] WSL2 (kernel 6.18.33.2-microsoft-standard-WSL2)
+  [INFO] Distribution: Ubuntu
+  [PASS] systemd is enabled (PID 1 = systemd)
 
-▸ Node.js 版本
-  [FAIL] 找不到 node 指令
-         ↳ Claude Code、Codex CLI 等工具都以 Node.js 執行。建議用 nvm 在 WSL 內安裝:
+▸ Node.js version
+  [FAIL] node command not found
+         ↳ Do not use the Windows build of Node.js as your WSL node; the two are not interchangeable.
+         ↳ Claude Code, Codex CLI and similar tools all run on Node.js. Install it inside WSL with nvm:
            $ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
            $ exec $SHELL -l
            $ nvm install --lts
 
-▸ npm 全域安裝與 PATH
-  [FAIL] npm 全域安裝路徑位於 Windows 端:C:\Users\you\AppData\Roaming\npm
-         ↳ 這正是「明明 npm install -g 裝好了,指令卻找不到」最常見的原因:
-         ↳   • 套件被裝進 Windows 的 %APPDATA%\npm,產生的是 .cmd / .ps1 包裝檔
-         ↳   • 這些包裝檔在 WSL 的 bash 裡不是可執行的 Linux 執行檔
-         ↳   • 即使能執行,傳進去的 Linux 路徑 Windows 端也解讀不了
+▸ npm global installs and PATH
+  [FAIL] The npm global prefix is on the Windows side: C:\Users\you\AppData\Roaming\npm
+         ↳ This is the number one cause of "npm install -g succeeded but the command is not found":
+         ↳   * packages land in Windows %APPDATA%\npm as .cmd / .ps1 wrappers
+         ↳   * those wrappers are not executable Linux binaries under WSL bash
+         ↳   * even when they run, the Linux paths you pass them are meaningless on the Windows side
 
-▸ 對外網路連線
-  [PASS] api.anthropic.com 可連線(HTTP 404)
-  [PASS] api.openai.com 可連線(HTTP 421)
+▸ Outbound connectivity
+  [PASS] api.anthropic.com is reachable (HTTP 404)
+  [PASS] api.openai.com is reachable (HTTP 421)
 
 ════════════════════════════════════════════
- 健檢總結(共 12 項)
+ Summary (12 checks)
 
    ● PASS    7
    ● WARN    2
    ● FAIL    3
 
- 環境狀態:需要修復 — 有 3 項會直接導致 AI CLI 工具無法正常運作。
+ Status: needs fixing — 3 items will actively prevent AI CLI tools from working.
 ════════════════════════════════════════════
 ```
-
-> **Note on language:** v0.1.0 emits its diagnostics in Traditional Chinese. Status keywords
-> (`PASS` / `WARN` / `FAIL`) and every suggested command are language-neutral, so the output
-> is still actionable if you don't read Chinese. English output (`--lang en`) is on the
-> roadmap below — contributions welcome.
 
 ### Options
 
@@ -125,7 +128,10 @@ wsl-ai-doctor v0.1.0 — WSL AI coding agent 環境健檢
 | `-v, --version` | Show version |
 | `--no-color` | Disable colored output |
 | `--color` | Force colored output, even when not a terminal |
+| `--json` | Machine-readable JSON output (implies `--no-color`) |
+| `--lang <code>` | Diagnostic language: `zh-TW` (default) or `en` |
 | `--skip-network` | Skip the connectivity check (for offline environments) |
+| `--allow-non-wsl` | Run outside WSL too; WSL checks are marked SKIP (for CI) |
 
 Color is disabled automatically when output is redirected to a file or a pipe, and the
 [`NO_COLOR`](https://no-color.org/) convention is respected:
@@ -134,6 +140,66 @@ Color is disabled automatically when output is redirected to a file or a pipe, a
 ./wsl-ai-doctor.sh > health-report.txt
 ```
 
+### JSON output
+
+`--json` makes the results consumable by other tools. Every check carries a **stable `id`** —
+message text changes with versions and languages, the `id` does not, so that is what you
+should key on:
+
+```bash
+./wsl-ai-doctor.sh --json --lang en
+```
+
+```json
+{
+  "tool": "wsl-ai-doctor",
+  "version": "0.2.0",
+  "generated_at": "2026-08-17T12:47:35+0800",
+  "lang": "en",
+  "environment": {
+    "is_wsl": true,
+    "wsl_version": 2,
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "distro": "Ubuntu",
+    "systemd": true
+  },
+  "summary": {
+    "pass": 12, "warn": 2, "fail": 0, "skip": 0,
+    "total": 14, "health": "usable"
+  },
+  "exit_code": 1,
+  "checks": [
+    {
+      "id": "npm.prefix_location",
+      "section": "npm",
+      "status": "fail",
+      "message": "The npm global prefix is on the Windows side: C:\\Users\\you\\AppData\\Roaming\\npm",
+      "hints": ["This is the number one cause of \"npm install -g succeeded but the command is not found\":"],
+      "commands": ["curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash"]
+    }
+  ]
+}
+```
+
+`summary.health` is one of `healthy`, `usable`, `needs_fix`, or `not_applicable` (outside WSL).
+
+Pull out everything that needs attention with `jq`:
+
+```bash
+./wsl-ai-doctor.sh --json | jq -r '.checks[] | select(.status=="fail") | .id'
+```
+
+### Language
+
+Set English as the default by exporting an environment variable, for example in `~/.bashrc`:
+
+```bash
+export WSL_AI_DOCTOR_LANG=en
+```
+
+`--lang` applies to check messages, section titles, the summary and `--help`. Suggested
+commands are never translated, since shell commands have no language.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -141,7 +207,13 @@ Color is disabled automatically when output is redirected to a file or a pipe, a
 | `0` | Everything passed |
 | `1` | Warnings, no failures |
 | `2` | At least one failure |
+| `3` | Not running inside WSL; no checks were run |
 | `64` | Invalid command-line usage |
+
+Outside WSL — native Linux, a container, a CI runner — the tool **refuses to run and reports
+`3`** by default. Every check assumes WSL, so running anyway would only produce misleading
+advice, such as telling you to edit an `/etc/wsl.conf` that does not exist. If you do need to
+run it there, pass `--allow-non-wsl` and the WSL-specific checks are marked `SKIP`.
 
 This makes it usable as a preflight check in a devcontainer or environment bootstrap script:
 
@@ -155,6 +227,7 @@ Every threshold can be overridden, which is useful when your team has its own st
 
 | Variable | Default | Description |
 | --- | --- | --- |
+| `WSL_AI_DOCTOR_LANG` | `zh-TW` | Default language (`zh-TW` or `en`) |
 | `WSL_AI_DOCTOR_NODE_MIN` | `18` | Minimum Node.js version; below this is a FAIL |
 | `WSL_AI_DOCTOR_NODE_RECOMMENDED` | `20` | Recommended Node.js version; below this is a WARN |
 | `WSL_AI_DOCTOR_NET_TIMEOUT` | `8` | Connectivity check timeout, in seconds |
@@ -189,28 +262,42 @@ Automating that is the entire point of this script.
 
 ## Roadmap
 
-v1 focuses on getting the checks right. Planned next:
+Done:
+
+- [x] `--json` output for piping into other tools (v0.2.0)
+- [x] English output (`--lang en`) (v0.2.0)
+- [x] Non-WSL guard and CI (v0.2.0)
+
+Planned:
 
 - [ ] `--fix` mode for automatic remediation
 - [ ] Interactive menu to confirm fixes one by one
-- [ ] `--json` output for piping into other tools
-- [ ] English output (`--lang en`)
+- [ ] More languages (the message catalog is in place; a new language is one more table)
 - [ ] More checks: git configuration, SSH agent, Docker Desktop integration, and projects
       stored under `/mnt/c` (a cross-filesystem performance trap)
+
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
 ## Contributing
 
-Reports of WSL environment traps you've hit are very welcome — especially the ones where
+Reports of WSL environment traps you have hit are very welcome — especially the ones where
 the error message actively misleads you. Those are exactly what this tool should cover.
 
 Before opening a PR:
 
 ```bash
 bash -n wsl-ai-doctor.sh                 # syntax check
-shellcheck -S warning wsl-ai-doctor.sh   # static analysis (optional)
+shellcheck -S warning wsl-ai-doctor.sh   # static analysis
 ```
+
+CI runs both of the above plus a smoke test on every push and pull request. Since GitHub
+runners are not WSL, the smoke job exercises the script through `--allow-non-wsl`, so the
+checks really do run rather than merely being invoked with `--help`.
+
+Adding a message means adding it to **both** `MSG_ZH` and `MSG_EN` in the script. CI fails
+if the English output still contains untranslated text or a `<missing:...>` key.
 
 ---
 
