@@ -39,7 +39,7 @@ Node.js,結果路徑一路對不上。這些問題的錯誤訊息通常都指不
 ### 直接下載執行
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<your-name>/wsl-ai-doctor/main/wsl-ai-doctor.sh -o wsl-ai-doctor.sh
+curl -fsSL https://raw.githubusercontent.com/Carinoasd/wsl-ai-doctor/main/wsl-ai-doctor.sh -o wsl-ai-doctor.sh
 chmod +x wsl-ai-doctor.sh
 ./wsl-ai-doctor.sh
 ```
@@ -47,7 +47,7 @@ chmod +x wsl-ai-doctor.sh
 ### 或 clone 整個專案
 
 ```bash
-git clone https://github.com/<your-name>/wsl-ai-doctor.git
+git clone https://github.com/Carinoasd/wsl-ai-doctor.git
 cd wsl-ai-doctor
 ./wsl-ai-doctor.sh
 ```
