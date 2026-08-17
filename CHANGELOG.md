@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.3.0] — 尚未發布 / Unreleased
+## [0.3.0] - 2026-08-17
 
 ### Added
 
@@ -110,6 +110,7 @@ Initial release: six classes of environment checks for developers running AI cod
 - 所有門檻皆可用環境變數覆寫。
   *All thresholds overridable via environment variables.*
 
+[0.3.0]: https://github.com/Carinoasd/wsl-ai-doctor/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Carinoasd/wsl-ai-doctor/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Carinoasd/wsl-ai-doctor/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Carinoasd/wsl-ai-doctor/releases/tag/v0.1.0
