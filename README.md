@@ -1,5 +1,7 @@
 # wsl-ai-doctor
 
+**繁體中文** · [English](README.en.md)
+
 > WSL 環境健康檢查工具 — 專為在 WSL 上使用 AI coding agent CLI 的開發者而生
 >
 > A health-check tool for WSL environments running AI coding agent CLIs.
