@@ -82,7 +82,7 @@ Diagnostics default to Traditional Chinese; pass `--lang en` for English:
 Sample output, from a machine where Node.js was only installed on the Windows side:
 
 ```
-wsl-ai-doctor v0.2.0 — WSL AI coding agent environment health check
+wsl-ai-doctor v0.2.1 — WSL AI coding agent environment health check
 Checked at: 2026-08-17 12:48:55
 
 ▸ WSL version and configuration
@@ -153,7 +153,7 @@ should key on:
 ```json
 {
   "tool": "wsl-ai-doctor",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "generated_at": "2026-08-17T12:47:35+0800",
   "lang": "en",
   "environment": {

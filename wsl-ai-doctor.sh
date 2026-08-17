@@ -23,7 +23,7 @@
 
 set -uo pipefail
 
-VERSION="0.2.0"
+VERSION="0.2.1"
 
 # 依賴 associative array(declare -A),需要 bash 4.0 以上
 if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
@@ -190,6 +190,7 @@ declare -A MSG_ZH=(
   [path.dup.h2]='不影響正確性,但會拖慢指令查找,也讓排查 PATH 問題變得困難。'
   [path.missing_dirs]='PATH 中有 %s 個不存在的目錄:%s'
   [path.missing_dirs.h1]='通常是移除工具後、rc 檔沒有跟著清理。清掉可減少每次指令查找的無效 stat。'
+  [path.provisioned]='PATH 中有尚未建立的目錄:%s(由已安裝的套件管理器負責建立,不視為問題)'
   [path.clean]='PATH 內容乾淨(無空值、重複或失效目錄)'
 
   [npmg.no_npm]='找不到 npm,略過全域套件檢查'
@@ -385,6 +386,7 @@ declare -A MSG_EN=(
   [path.dup.h2]='Harmless for correctness, but it slows down lookups and makes PATH problems harder to debug.'
   [path.missing_dirs]='PATH has %s directories that do not exist: %s'
   [path.missing_dirs.h1]='Usually leftovers from removed tools. Cleaning them up avoids a wasted stat on every lookup.'
+  [path.provisioned]='PATH references directories that do not exist yet: %s (an installed package manager creates them on demand, so this is not a problem)'
   [path.clean]='PATH is clean (no empty, duplicate or dead entries)'
 
   [npmg.no_npm]='npm not found, skipping global package checks'
@@ -570,6 +572,19 @@ is_win_path() {
 # 字串是否為 Windows 原生路徑(C:\...)
 is_win_native_path() {
   [[ "$1" =~ ^[A-Za-z]:\\ ]]
+}
+
+# PATH 中不存在、但屬於已安裝套件管理器的目錄。
+#
+# 這類路徑是前瞻性的:套件管理器會在安裝第一個套件時自動建立它們,
+# 並非「移除工具後沒清理的殘留」。對它們發警告會讓使用者去修一個
+# 根本沒壞的東西 —— 例如 Ubuntu 預設就把 /snap/bin 寫進 /etc/environment,
+# 只要還沒裝過任何 snap,該目錄就不存在。
+is_provisioned_dir() {
+  case "${1%/}" in
+    /snap/bin) command -v snap >/dev/null 2>&1 && return 0 ;;
+  esac
+  return 1
 }
 
 # 該路徑元素是否已存在於 PATH 中
@@ -784,7 +799,7 @@ check_path() {
   unset IFS
 
   local win_count=0 linux_count=0
-  local -a empty_entries=() missing_dirs=() dup_entries=() seen=()
+  local -a empty_entries=() missing_dirs=() dup_entries=() seen=() provisioned=()
   local entry norm
 
   for entry in "${entries[@]}"; do
@@ -810,7 +825,13 @@ check_path() {
       win_count=$((win_count + 1))
     else
       linux_count=$((linux_count + 1))
-      [[ -d "$entry" ]] || missing_dirs+=("$entry")
+      if [[ ! -d "$entry" ]]; then
+        if is_provisioned_dir "$entry"; then
+          provisioned+=("$entry")
+        else
+          missing_dirs+=("$entry")
+        fi
+      fi
     fi
   done
 
@@ -898,6 +919,12 @@ check_path() {
   if [[ ${#missing_dirs[@]} -gt 0 ]]; then
     record warn path.hygiene.missing_dirs "$(t path.missing_dirs "${#missing_dirs[@]}" "${missing_dirs[*]}")" \
       --hint "$(t path.missing_dirs.h1)"
+  fi
+
+  # 尚未建立、但由已安裝的套件管理器負責建立的目錄:說明為何不視為問題,
+  # 免得使用者看到 PASS 卻自己發現路徑不存在而困惑。
+  if [[ ${#provisioned[@]} -gt 0 ]]; then
+    record info path.hygiene.provisioned "$(t path.provisioned "${provisioned[*]}")"
   fi
 
   if [[ ${#empty_entries[@]} -eq 0 && ${#dup_entries[@]} -eq 0 && ${#missing_dirs[@]} -eq 0 ]]; then

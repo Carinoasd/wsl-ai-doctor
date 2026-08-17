@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.2.1] - 2026-08-17
+
+### Fixed
+
+- **PATH 檢查對套件管理器的前瞻性目錄誤判。** Ubuntu 預設把 `/snap/bin` 寫進 `/etc/environment`,但在還沒安裝任何 snap 套件之前該目錄並不存在,先前會被判為「移除工具後沒清理的殘留」而發出 WARN,並建議使用者去清理一個其實正常的設定。現在若對應的套件管理器已安裝(`/snap/bin` 對應 `snap`),改以 INFO 說明「由套件管理器負責建立」,不列入警告。真正失效的目錄仍照常警告。
+  *PATH check no longer flags directories that an installed package manager creates on demand. `/snap/bin` on a system with snapd but no snaps installed was previously reported as a leftover, which sent users to clean up a perfectly correct configuration.*
+
+---
+
 ## [0.2.0] - 2026-08-17
 
 這一版的重點是把工具從「一支腳本」變成「可以被信任、可以被串接的工具」:輸出可被機器消費、訊息可切換語言、行為由 CI 保護。
@@ -85,5 +94,6 @@ Initial release: six classes of environment checks for developers running AI cod
 - 所有門檻皆可用環境變數覆寫。
   *All thresholds overridable via environment variables.*
 
+[0.2.1]: https://github.com/Carinoasd/wsl-ai-doctor/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Carinoasd/wsl-ai-doctor/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Carinoasd/wsl-ai-doctor/releases/tag/v0.1.0

@@ -74,7 +74,7 @@ cd wsl-ai-doctor
 輸出範例:
 
 ```
-wsl-ai-doctor v0.2.0 — WSL AI coding agent 環境健檢
+wsl-ai-doctor v0.2.1 — WSL AI coding agent 環境健檢
 檢查時間:2026-08-17 04:36:06
 
 ▸ WSL 版本與設定
@@ -141,7 +141,7 @@ wsl-ai-doctor v0.2.0 — WSL AI coding agent 環境健檢
 ```json
 {
   "tool": "wsl-ai-doctor",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "generated_at": "2026-08-17T12:47:35+0800",
   "lang": "zh-TW",
   "environment": {
