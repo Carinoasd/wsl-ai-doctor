@@ -95,3 +95,89 @@ jobs:
 
       - name: --skip-network
         run: ./wsl-ai-doctor.sh --allow-non-wsl --skip-network --no-color || test $? -le 1
+
+      # --json 必須輸出合法 JSON,且結構欄位齊全、離開碼與文字模式一致
+      - name: --json produces valid JSON
+        run: |
+          set +e
+          ./wsl-ai-doctor.sh --allow-non-wsl --json > out.json
+          rc_json=$?
+          ./wsl-ai-doctor.sh --allow-non-wsl --no-color > /dev/null 2>&1
+          rc_text=$?
+          set -e
+          cat out.json
+          python3 -m json.tool out.json > /dev/null || { echo "不是合法 JSON"; exit 1; }
+          test "$rc_json" -eq "$rc_text" || { echo "JSON 與文字模式離開碼不一致:$rc_json vs $rc_text"; exit 1; }
+          python3 - <<'PY'
+          import json, sys
+          d = json.load(open("out.json"))
+          for k in ("tool","version","generated_at","lang","environment","summary","exit_code","checks"):
+              assert k in d, f"缺少頂層欄位 {k}"
+          for k in ("is_wsl","wsl_version","kernel","distro","systemd"):
+              assert k in d["environment"], f"缺少 environment.{k}"
+          for k in ("pass","warn","fail","skip","total","health"):
+              assert k in d["summary"], f"缺少 summary.{k}"
+          assert d["environment"]["is_wsl"] is False, "runner 不是 WSL,is_wsl 應為 false"
+          assert d["summary"]["skip"] > 0, "非 WSL 環境應有 SKIP 項目"
+          for c in d["checks"]:
+              assert c["id"] and c["section"] and c["status"], "檢查項目缺少 id/section/status"
+              assert isinstance(c["hints"], list) and isinstance(c["commands"], list)
+          print(f"OK:{len(d['checks'])} 筆檢查,health={d['summary']['health']}")
+          PY
+
+      # 非 WSL 環境下的 --json 閘門:仍須輸出合法 JSON 並回報 exit 3
+      - name: --json outside WSL reports not_applicable
+        run: |
+          set +e
+          ./wsl-ai-doctor.sh --json > gate.json
+          rc=$?
+          set -e
+          cat gate.json
+          test "$rc" -eq 3 || { echo "期望離開碼 3,實際 $rc"; exit 1; }
+          python3 - <<'PY'
+          import json
+          d = json.load(open("gate.json"))
+          assert d["environment"]["is_wsl"] is False
+          assert d["summary"]["health"] == "not_applicable", d["summary"]["health"]
+          assert d["checks"] == [], "未執行檢查時 checks 應為空"
+          assert d["exit_code"] == 3
+          print("OK:非 WSL 閘門的 JSON 正確")
+          PY
+
+      # --lang en 必須真的切換語言,且沒有漏翻的訊息鍵
+      - name: --lang en switches diagnostics to English
+        run: |
+          out=$(./wsl-ai-doctor.sh --allow-non-wsl --no-color --lang en 2>&1 || true)
+          echo "$out"
+          echo "$out" | grep -q "Summary (" || { echo "未切換到英文總結"; exit 1; }
+          echo "$out" | grep -q "Node.js version" || { echo "未切換到英文章節標題"; exit 1; }
+          if echo "$out" | grep -q "<missing:"; then
+            echo "有訊息鍵缺少翻譯"; exit 1
+          fi
+          # 排除路徑後不應再有中文(Windows 使用者名稱可能本身是中文)
+          if echo "$out" | grep -v '/mnt/' | grep -qP '[\x{4e00}-\x{9fff}]'; then
+            echo "英文模式仍有未翻譯的中文:"
+            echo "$out" | grep -v '/mnt/' | grep -P '[\x{4e00}-\x{9fff}]'
+            exit 1
+          fi
+          echo "OK:英文輸出完整"
+
+      - name: --lang rejects unsupported values
+        run: |
+          set +e
+          ./wsl-ai-doctor.sh --lang klingon >/dev/null 2>&1
+          rc=$?
+          set -e
+          test "$rc" -eq 64 || { echo "期望離開碼 64,實際 $rc"; exit 1; }
+          echo "OK"
+
+      # --help 應反映語言,且與參數順序無關
+      - name: --help respects --lang regardless of order
+        run: |
+          ./wsl-ai-doctor.sh --help --lang en | grep -q "Machine-readable JSON output" \
+            || { echo "--help --lang en 未輸出英文說明"; exit 1; }
+          ./wsl-ai-doctor.sh --lang en --help | grep -q "Machine-readable JSON output" \
+            || { echo "--lang en --help 未輸出英文說明"; exit 1; }
+          ./wsl-ai-doctor.sh --help | grep -q "輸出機器可讀的 JSON" \
+            || { echo "預設說明未使用中文"; exit 1; }
+          echo "OK"
