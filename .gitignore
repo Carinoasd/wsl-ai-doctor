@@ -1,0 +1,10 @@
+# 執行時產生的暫存 / 輸出
+*.log
+*.tmp
+report-*.txt
+
+# 編輯器 / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
