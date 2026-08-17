@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint (bash -n + shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax check
+        run: bash -n wsl-ai-doctor.sh
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck --version
+
+      # -S warning:忽略 style/info 層級的建議,只擋真正會出問題的寫法
+      - name: Run shellcheck
+        run: shellcheck -S warning wsl-ai-doctor.sh
+
+  smoke:
+    name: Smoke test (non-WSL runner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: File is executable
+        run: test -x wsl-ai-doctor.sh
+
+      - name: --version
+        run: ./wsl-ai-doctor.sh --version
+
+      - name: --help
+        run: ./wsl-ai-doctor.sh --help
+
+      # 未知選項必須以 64 結束(sysexits.h 的 EX_USAGE),而非默默忽略
+      - name: Unknown option exits 64
+        run: |
+          set +e
+          ./wsl-ai-doctor.sh --definitely-not-an-option >/dev/null 2>&1
+          rc=$?
+          set -e
+          test "$rc" -eq 64 || { echo "期望離開碼 64,實際 $rc"; exit 1; }
+
+      # GitHub runner 不是 WSL,預設應拒絕執行並回報離開碼 3
+      - name: Refuses to run outside WSL (exit 3)
+        run: |
+          set +e
+          out=$(./wsl-ai-doctor.sh --no-color 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          test "$rc" -eq 3 || { echo "期望離開碼 3,實際 $rc"; exit 1; }
+          echo "$out" | grep -q "不在 WSL 環境中" || { echo "缺少非 WSL 說明訊息"; exit 1; }
+
+      # --allow-non-wsl 下實際跑完所有檢查:驗證 Node.js、PATH、npm 全域
+      # 這幾段邏輯在真實環境中不會爆,且 WSL 專屬檢查確實被標記為 SKIP
+      - name: Full run with --allow-non-wsl
+        run: |
+          set +e
+          out=$(./wsl-ai-doctor.sh --no-color --allow-non-wsl 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          # 0 = 全過,1 = 有 WARN;兩者都代表腳本正常跑完
+          test "$rc" -eq 0 -o "$rc" -eq 1 || { echo "期望離開碼 0 或 1,實際 $rc"; exit 1; }
+          echo "$out" | grep -q "\[SKIP\] 非 WSL 環境" || { echo "WSL 專屬檢查未標記 SKIP"; exit 1; }
+          echo "$out" | grep -q "健檢總結" || { echo "未印出總結"; exit 1; }
+
+      # 非 WSL 環境不得給出 WSL 專屬的修復建議(這是階段 1 修掉的誤導性輸出)
+      - name: No misleading WSL advice on plain Linux
+        run: |
+          out=$(./wsl-ai-doctor.sh --no-color --allow-non-wsl 2>&1 || true)
+          if echo "$out" | grep -q "appendWindowsPath"; then
+            echo "非 WSL 環境卻建議修改 /etc/wsl.conf"; exit 1
+          fi
+          echo "OK:未出現 WSL 專屬建議"
+
+      - name: Color control (--no-color / auto-detect)
+        run: |
+          ./wsl-ai-doctor.sh --no-color --allow-non-wsl > out.txt 2>&1 || true
+          if grep -q $'\033' out.txt; then echo "--no-color 仍輸出 ANSI 碼"; exit 1; fi
+          ./wsl-ai-doctor.sh --allow-non-wsl > out2.txt 2>&1 || true
+          if grep -q $'\033' out2.txt; then echo "重導向到檔案時未自動關閉顏色"; exit 1; fi
+          echo "OK:顏色控制正常"
+
+      - name: --skip-network
+        run: ./wsl-ai-doctor.sh --allow-non-wsl --skip-network --no-color || test $? -le 1
