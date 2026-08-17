@@ -1,0 +1,168 @@
+name: Release
+
+# 推送 v* 開頭的 tag 時自動建立 GitHub Release。
+#
+# workflow_dispatch 是給「tag 已經推過、但當時還沒有這個 workflow」的情況:
+# 到 Actions 分頁手動指定 tag 即可補發,不需要刪掉 tag 重推。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要發布的 tag(例如 v0.3.0)"
+        required: true
+        type: string
+
+# 建立 Release 需要寫入權限。GITHUB_TOKEN 由 Actions 自動注入,
+# 不需要自行設定任何 secret。
+permissions:
+  contents: write
+
+jobs:
+  # 發布前先驗一次。tag 一旦發成 Release 就會被人下載,
+  # 不該讓語法壞掉或跑不起來的版本流出去。
+  verify:
+    name: Verify before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Bash syntax check
+        run: bash -n wsl-ai-doctor.sh
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+
+      - name: Run shellcheck
+        run: shellcheck -S warning wsl-ai-doctor.sh
+
+      - name: Smoke test
+        run: |
+          set +e
+          ./wsl-ai-doctor.sh --no-color >/dev/null 2>&1
+          rc=$?
+          set -e
+          test "$rc" -eq 3 || { echo "非 WSL 環境應回報離開碼 3,實際 $rc"; exit 1; }
+          ./wsl-ai-doctor.sh --allow-non-wsl --json > /tmp/out.json 2>/dev/null || true
+          python3 -m json.tool /tmp/out.json > /dev/null || { echo "--json 輸出無法解析"; exit 1; }
+          ./wsl-ai-doctor.sh --allow-non-wsl --no-color --lang en 2>&1 | grep -q "<missing:" \
+            && { echo "英文輸出有缺漏的翻譯鍵"; exit 1; }
+          echo "OK"
+
+  release:
+    name: Create GitHub Release
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          # 需要完整歷史與 tag 物件,才能讀到 annotated tag 的標題
+          fetch-depth: 0
+
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "解析結果:tag=$TAG version=$VERSION"
+
+      # tag 與腳本內的 VERSION 不一致,代表打錯 tag 或忘了改版本號。
+      # 這種情況發出去的 Release 會讓使用者拿到版本號對不上的檔案。
+      - name: Tag must match VERSION in script
+        run: |
+          SCRIPT_VERSION="$(grep -m1 '^VERSION=' wsl-ai-doctor.sh | cut -d'"' -f2)"
+          EXPECTED="${{ steps.meta.outputs.version }}"
+          echo "腳本版本:$SCRIPT_VERSION / tag 版本:$EXPECTED"
+          test "$SCRIPT_VERSION" = "$EXPECTED" || {
+            echo "::error::tag ${{ steps.meta.outputs.tag }} 與腳本中的 VERSION=$SCRIPT_VERSION 不一致"
+            exit 1
+          }
+
+      # Release 內容取自 CHANGELOG 中對應版本的段落,避免同一份說明維護兩次。
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          python3 - "${{ steps.meta.outputs.version }}" <<'PY' > release-notes.md
+          import re, sys
+
+          version = sys.argv[1]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+
+          # 抓 "## [x.y.z]" 到下一個 "## [" 之間的內容
+          pattern = re.compile(
+              r"^## \[" + re.escape(version) + r"\].*?$(.*?)(?=^## \[|\Z)",
+              re.MULTILINE | re.DOTALL,
+          )
+          match = pattern.search(text)
+          if not match:
+              sys.exit(f"CHANGELOG.md 中找不到 {version} 的區段")
+
+          body = match.group(1)
+
+          # CHANGELOG 最後一個版本的區段後面接的是檔尾的連結定義區塊
+          # ([0.1.0]: https://...),沒有下一個 "## [" 當邊界會被一起抓進來。
+          body = re.sub(r"(?:^\[[^\]]+\]:[^\n]*\n?)+\Z", "", body.strip(), flags=re.MULTILINE)
+          # 去掉區段結尾的分隔線與多餘空行
+          body = re.sub(r"\n+---\s*$", "", body.strip())
+          if not body.strip():
+              sys.exit(f"CHANGELOG.md 中 {version} 的區段是空的")
+          print(body.strip())
+          PY
+
+          echo "--- 取出的內容 ---"
+          cat release-notes.md
+
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "**完整變更紀錄 / Full changelog:** [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)"
+          } >> release-notes.md
+
+      # 標題取 annotated tag 的第一行(git tag -a 的訊息主旨);
+      # 沒有的話退回 tag 名稱本身。
+      - name: Resolve release title
+        id: title
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          SUBJECT="$(git for-each-ref "refs/tags/$TAG" --format='%(contents:subject)')"
+          [ -z "$SUBJECT" ] && SUBJECT="$TAG"
+          echo "title=$SUBJECT" >> "$GITHUB_OUTPUT"
+          echo "標題:$SUBJECT"
+
+      # 版本號含 - 的視為預覽版(例如 v0.4.0-rc1),不標記為 Latest
+      - name: Detect pre-release
+        id: prerelease
+        run: |
+          case "${{ steps.meta.outputs.version }}" in
+            *-*) echo "flag=--prerelease" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "flag=--latest"     >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::$TAG 的 Release 已存在,改為更新內容"
+            gh release edit "$TAG" \
+              --title "${{ steps.title.outputs.title }}" \
+              --notes-file release-notes.md \
+              ${{ steps.prerelease.outputs.flag }}
+          else
+            gh release create "$TAG" \
+              --title "${{ steps.title.outputs.title }}" \
+              --notes-file release-notes.md \
+              ${{ steps.prerelease.outputs.flag }}
+          fi
+          echo "完成:$(gh release view "$TAG" --json url -q .url)"

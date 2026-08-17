@@ -311,6 +311,26 @@ CI 會在每次 push 與 PR 跑上述兩項加上冒煙測試。由於 GitHub ru
 
 新增訊息時必須**同時**加進腳本裡的 `MSG_ZH` 與 `MSG_EN`。英文輸出若殘留未翻譯的文字或 `<missing:...>` 鍵,CI 會直接失敗。
 
+### 發布流程
+
+推 tag 就會自動發布,不需要手動開網頁:
+
+```bash
+# 1. 改 wsl-ai-doctor.sh 的 VERSION,並在 CHANGELOG.md 新增對應區段
+# 2. 打上 annotated tag,第一行會成為 Release 標題
+git tag -a v0.4.0 -m "v0.4.0 — 這一版的重點"
+git push origin v0.4.0
+```
+
+`.github/workflows/release.yml` 會接手:先跑一次 lint 與冒煙測試,確認 tag 與腳本裡的 `VERSION` 一致,再從 `CHANGELOG.md` 抽出該版本的區段當作 Release 內容並發布。
+
+- **版本號含 `-`**(例如 `v0.4.0-rc1`)會標記為 pre-release,不會搶走 Latest
+- **tag 與 `VERSION` 不一致**會直接中止,避免發出版本號對不上的檔案
+- **CHANGELOG 沒有對應區段**也會中止,強迫每個版本都有變更說明
+- 同一個 tag 重跑會更新既有 Release,不會產生重複
+
+tag 已經推過、但當時還沒有這個 workflow 的情況,可到 Actions 分頁的 **Release** workflow 按 **Run workflow** 手動指定 tag 補發。
+
 ---
 
 ## License

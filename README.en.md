@@ -341,6 +341,31 @@ checks really do run rather than merely being invoked with `--help`.
 Adding a message means adding it to **both** `MSG_ZH` and `MSG_EN` in the script. CI fails
 if the English output still contains untranslated text or a `<missing:...>` key.
 
+### Release process
+
+Pushing a tag publishes the release; nothing has to be done through the web UI:
+
+```bash
+# 1. Bump VERSION in wsl-ai-doctor.sh and add the matching section to CHANGELOG.md
+# 2. Push an annotated tag — its first line becomes the release title
+git tag -a v0.4.0 -m "v0.4.0 — what this release is about"
+git push origin v0.4.0
+```
+
+`.github/workflows/release.yml` takes it from there: it runs lint and a smoke test, checks
+that the tag matches `VERSION` in the script, then extracts that version's section from
+`CHANGELOG.md` and publishes it as the release body.
+
+- **A version containing `-`** (for example `v0.4.0-rc1`) is marked as a pre-release and does
+  not take over the Latest badge
+- **A tag that disagrees with `VERSION`** aborts the run, so a release can never ship a file
+  whose version does not match its tag
+- **A missing CHANGELOG section** also aborts, which forces every release to be documented
+- Re-running for the same tag updates the existing release rather than creating a duplicate
+
+For a tag that was pushed before this workflow existed, open the **Release** workflow in the
+Actions tab and use **Run workflow** to publish it by name.
+
 ---
 
 ## License
