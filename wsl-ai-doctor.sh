@@ -44,9 +44,12 @@ PATH_WIN_ENTRY_WARN="${WSL_AI_DOCTOR_PATH_WIN_WARN:-25}"
 PASS_COUNT=0
 WARN_COUNT=0
 FAIL_COUNT=0
+SKIP_COUNT=0
 
 USE_COLOR=auto
 SKIP_NETWORK=0
+ALLOW_NON_WSL=0   # --allow-non-wsl:非 WSL 環境也繼續執行(CI 用)
+NON_WSL=0         # 執行期判定結果:1 代表目前不在 WSL 中
 
 setup_colors() {
   local enabled=0
@@ -91,6 +94,12 @@ info() {
   printf '  %s[INFO]%s %s\n' "$C_CYAN" "$C_RESET" "$1"
 }
 
+# 此環境不適用的檢查。單獨計分,不影響健康判定與離開代碼。
+skip() {
+  SKIP_COUNT=$((SKIP_COUNT + 1))
+  printf '  %s[SKIP]%s %s\n' "$C_DIM" "$C_RESET" "$1"
+}
+
 # 修復建議說明文字
 hint() {
   printf '         %s↳ %s%s\n' "$C_DIM" "$1" "$C_RESET"
@@ -104,6 +113,22 @@ cmd() {
 # ---------------------------------------------------------------------------
 # 共用工具函式
 # ---------------------------------------------------------------------------
+
+# 取得 kernel release 字串(WSL 會在其中標示 microsoft)
+kernel_release() {
+  cat /proc/sys/kernel/osrelease 2>/dev/null || uname -r 2>/dev/null || echo "unknown"
+}
+
+# 是否執行於 WSL 之中。三個獨立訊號任一成立即可,避免單一判斷失準:
+#   1. kernel release 含 microsoft(WSL1/WSL2 皆有)
+#   2. /run/WSL 存在(WSL 的 interop socket 目錄)
+#   3. WSL_DISTRO_NAME 環境變數(由 WSL 注入)
+is_wsl() {
+  [[ "$(kernel_release)" =~ [Mm]icrosoft ]] && return 0
+  [[ -e /run/WSL ]] && return 0
+  [[ -n "${WSL_DISTRO_NAME:-}" ]] && return 0
+  return 1
+}
 
 # 路徑是否位於 Windows 檔案系統(透過 /mnt 掛載)
 is_win_path() {
@@ -158,13 +183,13 @@ check_wsl() {
   section "WSL 版本與設定"
 
   local osrelease
-  osrelease="$(cat /proc/sys/kernel/osrelease 2>/dev/null || uname -r)"
+  osrelease="$(kernel_release)"
 
-  # --- 是否真的在 WSL 裡 ---
-  if [[ ! "$osrelease" =~ [Mm]icrosoft ]] && [[ ! -e /run/WSL ]] && [[ -z "${WSL_DISTRO_NAME:-}" ]]; then
-    fail "目前不在 WSL 環境中(kernel: $osrelease)"
-    hint "本工具專為 WSL 設計,請在 WSL 發行版的終端機內執行。"
-    return 1
+  # 非 WSL 環境(僅在 --allow-non-wsl 下會走到這裡):整段跳過,
+  # 因為 WSL 版本、systemd 的 WSL 設定、/etc/wsl.conf 在此都不適用。
+  if [[ $NON_WSL -eq 1 ]]; then
+    skip "非 WSL 環境,略過 WSL 版本與設定檢查(kernel: $osrelease)"
+    return 0
   fi
 
   # --- WSL1 vs WSL2 ---
@@ -263,6 +288,8 @@ check_node() {
     hint "請在 WSL 內另外安裝一份 Linux 版 Node.js:"
     cmd "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash"
     cmd "exec \$SHELL -l && nvm install --lts"
+  elif [[ $NON_WSL -eq 1 ]]; then
+    pass "node 為原生 Linux 安裝:$node_path"
   else
     pass "node 為 WSL 端安裝:$node_path"
   fi
@@ -280,7 +307,11 @@ check_node() {
     hint "兩者混用時,npm 會把套件裝到 Windows 的目錄,而 WSL 的 node 找不到它們。"
     hint "請確認 PATH 中 WSL 的 node 目錄排在 Windows 路徑之前,或重裝 nvm。"
   elif ! is_win_path "$npm_path"; then
-    pass "npm 為 WSL 端安裝:$npm_path($(npm -v 2>/dev/null | tr -d '\r'))"
+    if [[ $NON_WSL -eq 1 ]]; then
+      pass "npm 為原生 Linux 安裝:$npm_path($(npm -v 2>/dev/null | tr -d '\r'))"
+    else
+      pass "npm 為 WSL 端安裝:$npm_path($(npm -v 2>/dev/null | tr -d '\r'))"
+    fi
   else
     warn "npm 指向 Windows 安裝:$npm_path"
     hint "與上一項為同一個根因,修好 node 之後這項通常會一起解決。"
@@ -330,7 +361,16 @@ check_path() {
     fi
   done
 
-  info "PATH 共 ${#entries[@]} 個項目(WSL 端 $linux_count、Windows 端 $win_count)"
+  if [[ $NON_WSL -eq 1 ]]; then
+    info "PATH 共 ${#entries[@]} 個項目"
+  else
+    info "PATH 共 ${#entries[@]} 個項目(WSL 端 $linux_count、Windows 端 $win_count)"
+  fi
+
+  # 以下三項都在檢查 WSL 與 Windows 之間的互通性,非 WSL 環境不適用。
+  if [[ $NON_WSL -eq 1 ]]; then
+    skip "非 WSL 環境,略過 Windows interop 與跨側指令解析檢查"
+  else
 
   # --- Windows interop 是否生效 ---
   if [[ $win_count -eq 0 ]]; then
@@ -387,7 +427,9 @@ check_path() {
     cmd "command -v -a node   # 確認所有候選路徑與優先順序"
   fi
 
-  # --- PATH 衛生檢查 ---
+  fi   # end: NON_WSL 互通性檢查區塊
+
+  # --- PATH 衛生檢查(與 WSL 無關,任何環境都適用) ---
   if [[ ${#empty_entries[@]} -gt 0 ]]; then
     warn "PATH 中含有 ${#empty_entries[@]} 個空值項目"
     hint "空值等同於「當前目錄」,會讓 shell 執行到工作目錄下的同名檔案,有安全風險。"
@@ -605,6 +647,11 @@ check_network() {
 check_wslconfig() {
   section ".wslconfig 資源配置"
 
+  if [[ $NON_WSL -eq 1 ]]; then
+    skip "非 WSL 環境,沒有 .wslconfig 可檢查"
+    return 0
+  fi
+
   # --- 找出 Windows 使用者家目錄 ---
   local win_home_raw win_home=""
   if [[ -n "${WSL_AI_DOCTOR_WSLCONFIG:-}" ]]; then
@@ -742,13 +789,15 @@ check_wslconfig() {
 # ---------------------------------------------------------------------------
 
 print_summary() {
-  local total=$((PASS_COUNT + WARN_COUNT + FAIL_COUNT))
+  local total=$((PASS_COUNT + WARN_COUNT + FAIL_COUNT + SKIP_COUNT))
 
   printf '\n%s%s\n' "$C_BOLD" "════════════════════════════════════════════"
   printf ' 健檢總結(共 %d 項)%s\n\n' "$total" "$C_RESET"
   printf '   %s● PASS%s  %3d\n' "$C_GREEN"  "$C_RESET" "$PASS_COUNT"
   printf '   %s● WARN%s  %3d\n' "$C_YELLOW" "$C_RESET" "$WARN_COUNT"
   printf '   %s● FAIL%s  %3d\n' "$C_RED"    "$C_RESET" "$FAIL_COUNT"
+  [[ $SKIP_COUNT -gt 0 ]] && \
+    printf '   %s● SKIP%s  %3d  %s(此環境不適用)%s\n' "$C_DIM" "$C_RESET" "$SKIP_COUNT" "$C_DIM" "$C_RESET"
   printf '\n'
 
   if [[ $FAIL_COUNT -gt 0 ]]; then
@@ -784,11 +833,14 @@ wsl-ai-doctor v$VERSION — WSL 環境健康檢查工具
       --no-color      停用彩色輸出(輸出到檔案或 CI 時使用)
       --color         強制啟用彩色輸出(即使不是終端機)
       --skip-network  略過對外連線檢查(離線環境使用)
+      --allow-non-wsl 非 WSL 環境也執行,WSL 相關檢查標記為 SKIP(CI 用)
 
 離開代碼:
   0   全部通過
   1   有 WARN,無 FAIL
   2   有 FAIL
+  3   不在 WSL 環境中,未執行任何檢查
+  64  選項用法錯誤
 
 環境變數:
   WSL_AI_DOCTOR_NODE_MIN           Node.js 最低版本(預設 $NODE_MIN_REQUIRED)
@@ -808,6 +860,7 @@ main() {
       --no-color)    USE_COLOR=never ;;
       --color)       USE_COLOR=always ;;
       --skip-network) SKIP_NETWORK=1 ;;
+      --allow-non-wsl) ALLOW_NON_WSL=1 ;;
       *)
         printf 'ERROR: 未知的選項 %s\n\n' "$1" >&2
         setup_colors; usage >&2
@@ -822,6 +875,25 @@ main() {
   printf '%s%swsl-ai-doctor v%s%s — WSL AI coding agent 環境健檢\n' \
     "$C_BOLD" "$C_CYAN" "$VERSION" "$C_RESET"
   printf '%s檢查時間:%s%s\n' "$C_DIM" "$(date '+%Y-%m-%d %H:%M:%S')" "$C_RESET"
+
+  # --- 環境閘門:確認在 WSL 中,否則安全結束 ---
+  # 本工具所有檢查的前提都是 WSL 環境。在純 Linux 上硬跑會產生誤導性結果
+  # (例如建議去修改一台根本沒有 /etc/wsl.conf 的機器),因此預設直接結束。
+  if ! is_wsl; then
+    NON_WSL=1
+    if [[ $ALLOW_NON_WSL -eq 0 ]]; then
+      printf '\n  %s[SKIP]%s 目前不在 WSL 環境中(kernel: %s)\n' \
+        "$C_YELLOW" "$C_RESET" "$(kernel_release)"
+      printf '         %s↳ 本工具專為 WSL 設計,在原生 Linux 或容器中執行只會得到誤導性結果,\n' "$C_DIM"
+      printf '           因此不進行任何檢查。請在 WSL 發行版的終端機內執行。%s\n' "$C_RESET"
+      printf '         %s↳ 若你確定要在此環境執行(例如 CI 冒煙測試),可加上:%s\n' "$C_DIM" "$C_RESET"
+      printf '           %s$ %s --allow-non-wsl%s\n' "$C_CYAN" "$0" "$C_RESET"
+      printf '             %s與 WSL 相關的檢查會標記為 SKIP,其餘檢查照常執行。%s\n\n' "$C_DIM" "$C_RESET"
+      exit 3
+    fi
+    printf '\n%s%s⚠ 非 WSL 環境,以 --allow-non-wsl 繼續執行;WSL 相關檢查將標記為 SKIP。%s\n' \
+      "$C_BOLD" "$C_YELLOW" "$C_RESET"
+  fi
 
   check_wsl
   check_node
